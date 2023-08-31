@@ -2,74 +2,21 @@
 
 A project of bash script to deploy a django on an AWS EC2
 
----
-
-## Deploy
-
-- Step:
-
-1. Create an EC2 instance
-
-2. Connect to EC2 instance using Cloudshell
-
-3. Load bash script to `~` path of instance
-
-```sh
-# change path
-cd ~
-
-# load script from github
-git clone https://github.com/simonangel-fong/bash-deploy-django.git
-```
-
-4. Change path and run `delpoy.sh` script
-
-```sh
-# change path
-cd bash-deploy-django
-
-# run script
-source script/deploy.sh
-```
-
-5. Input project data:
-   
-   - **Project name**: The name of django project.(Git repository name should be the same as django project name.)
-   - **Git url**: The Url of Git repository.
-   - **Host IP**: The public ip of EC2
-   - **Username**: The name of new user to be created in mysql.
-   - **Password**: The password of new user in mysql.
-   - **Database name**: The name of database to be created in mysql
-   - **Whether to test**: Optional
-     - Enter "1": Script will run `runserver` in virtual environment to test django app on the port 8000 of public IP.
-     - Otherwise, the test will be skipped.
-
-6. Django project will be deployed on EC2 public IP .
-
-- *It is available only with `http`. `https` need further configuration.
-- **Firewall configuration is optional. 
+- [Bash Deploy Django App](#bash-deploy-django-app)
+  - [V 1.0.0](#v-100)
+  - [V 1.0.1](#v-101)
 
 ---
 
-## Update
+## V 1.0.0
 
-- To update codes from github after deployment, run `update.sh` script and input project data as above.
+- 1. Deploy Django + Gunicorn + Supervisor on AWS EC2 manually.
+- 2. Deploy Django project on AWS EC2 using Cloudshell+bash script.
+- 3. Update code from github using bash script manually.
 
-```sh
-# change path
-cd ~
-cd bash-deploy-django
+- **Example**
 
-# run script
-source script/update.sh
-
-```
-
----
-
-## Example
-
-- Deploy a demo django app using bash script. (Github: https://github.com/simonangel-fong/demoProj.git)
+  - Deploy a demo django app using bash script. (Django proejct: https://github.com/simonangel-fong/demoProj.git)
 
 1. Download and run script
 
@@ -92,3 +39,12 @@ source script/update.sh
 5. The final outcome:
 
     ![deployed](./pic/web.png)
+
+---
+
+## V 1.0.1
+
+- 1. Deploy Django project on AWS EC2 using User Data.
+- 2. Update code from github using a bash script that is automatically created when initializing EC2.
+
+![user data](./pic/user-data.png)
