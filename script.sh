@@ -38,15 +38,15 @@ setup_mysql() {
 
     # Create database
     echo -e "$(date +'%Y-%m-%d %R') Create project database starts..."
-    mysql -u root -e "CREATE USER '${P_USER}'@'localhost' IDENTIFIED BY '${P_PWD}';"
+    mysql -u root -e "CREATE USER IF NOT EXISTS '${P_USER}'@'localhost' IDENTIFIED BY '${P_PWD}';"
     mysql -u root -e "GRANT CREATE, ALTER, DROP, INSERT, UPDATE, INDEX, DELETE, SELECT, REFERENCES, RELOAD on *.* TO '${P_USER}'@'localhost' WITH GRANT OPTION;"
     mysql -u root -e "FLUSH PRIVILEGES;"
-    mysql -u$P_USER -p$P_PWD -e "CREATE DATABASE ${P_DB_NAME};"
+    mysql -u$P_USER -p$P_PWD -e "CREATE DATABASE IF NOT EXISTS ${P_DB_NAME};"
     echo -e "$(date +'%Y-%m-%d %R') Create project database completed.\n"
 
     # logging database
     echo -e "\n$(date +'%Y-%m-%d %R') Databases in Mysql:" >>/home/ubuntu/setup_log
-    mysql -u"P_USER -p$P_PWD -e 'show databases;" >>/home/ubuntu/setup_log
+    mysql -u$P_USER -p$P_PWD -e "show databases;" >>/home/ubuntu/setup_log
 }
 
 ## Establish virtual environment
@@ -65,11 +65,11 @@ setup_venv() {
 ## Download codes from github
 load_code() {
 
-    P_PROJECT_NAME=$1
+    P_REPO_NAME=$1
     P_GITHUB_URL=$2
 
     echo -e "$(date +'%Y-%m-%d %R') Download codes from github starts..."
-    rm -rf /home/ubuntu/${P_PROJECT_NAME} # remove the exsting directory
+    rm -rf /home/ubuntu/${P_REPO_NAME} # remove the exsting directory
     cd /home/ubuntu
     git clone $P_GITHUB_URL # clone codes from github
     echo -e "$(date +'%Y-%m-%d %R') Download codes from github completed.\n"
@@ -78,14 +78,15 @@ load_code() {
 ## Create .env file within project dir
 create_env_file() {
 
-    P_PROJECT_NAME=$1
-    P_HOST_IP=$2
-    P_DB_NAME=$3
-    P_USER=$4
-    P_PWD=$5
+    P_REPO_NAME=$1
+    P_PROJECT_NAME=$2
+    P_HOST_IP=$3
+    P_DB_NAME=$4
+    P_USER=$5
+    P_PWD=$6
 
     echo -e "$(date +'%Y-%m-%d %R') Create .env file starts..."
-    env_file=/home/ubuntu/${P_PROJECT_NAME}/${P_PROJECT_NAME}/${P_PROJECT_NAME}/.env
+    env_file=/home/ubuntu/${P_REPO_NAME}/${P_PROJECT_NAME}/${P_PROJECT_NAME}/.env
     cat >$env_file <<ENV
 DEBUG=False
 ALLOWED_HOSTS=${P_HOST_IP}
@@ -102,13 +103,13 @@ ENV
 ## Update packages within venv
 update_venv_package() {
 
-    P_PROJECT_NAME=$1
-    P_MIGRATE_APP=$2
+    P_REPO_NAME=$1
+    P_PROJECT_NAME=$2
 
     echo -e "$(date +'%Y-%m-%d %R') Update venv packages starts..."
     source /home/ubuntu/env/bin/activate # activate venv
 
-    pip install -r /home/ubuntu/${P_PROJECT_NAME}/requirements.txt
+    pip install -r /home/ubuntu/${P_REPO_NAME}/requirements.txt
     echo -e "$(date +'%Y-%m-%d %R') Update venv packages completed.\n"
 
     # logging package list
@@ -117,8 +118,8 @@ update_venv_package() {
 
     # Migrate App
     echo -e "$(date +'%Y-%m-%d %R') Migrate App starts..."
-    python3 /home/ubuntu/${P_PROJECT_NAME}/${P_PROJECT_NAME}/manage.py makemigrations
-    python3 /home/ubuntu/${P_PROJECT_NAME}/${P_PROJECT_NAME}/manage.py migrate
+    python3 /home/ubuntu/${P_REPO_NAME}/${P_PROJECT_NAME}/manage.py makemigrations
+    python3 /home/ubuntu/${P_REPO_NAME}/${P_PROJECT_NAME}/manage.py migrate
     deactivate
     echo -e "$(date +'%Y-%m-%d %R') Migrate App starts completed.\n"
 }
@@ -126,7 +127,8 @@ update_venv_package() {
 ## Install and configure Gunicorn
 setup_gunicorn() {
 
-    P_PROJECT_NAME=$1
+    P_REPO_NAME=$1
+    P_PROJECT_NAME=$2
 
     #  Install gunicorn in venv
     echo -e "$(date +'%Y-%m-%d %R') Install gunicorn starts..."
@@ -162,7 +164,7 @@ After=network.target
 [Service]
 User=root
 Group=www-data 
-WorkingDirectory=/home/ubuntu/${P_PROJECT_NAME}/${P_PROJECT_NAME}
+WorkingDirectory=/home/ubuntu/${P_REPO_NAME}/${P_PROJECT_NAME}
 ExecStart=/home/ubuntu/env/bin/gunicorn \
     --access-logfile - \
     --workers 3 \
@@ -176,9 +178,9 @@ SERVICE
 
     # Apply gunicorn configuration
     echo -e "$(date +'%Y-%m-%d %R') gunicorn restart.\n"
+    systemctl daemon-reload          # reload daemon
     systemctl start gunicorn.socket  # Start gunicorn
     systemctl enable gunicorn.socket # enable on boots
-    systemctl daemon-reload          # reload daemon
     systemctl restart gunicorn       # restart gunicorn
 
     # logging gunicorn status
@@ -189,8 +191,9 @@ SERVICE
 ## Install and configure Nginx
 setup_nginx() {
 
-    P_PROJECT_NAME=$1
-    P_HOST_IP=$2
+    P_REPO_NAME=$1
+    P_PROJECT_NAME=$2
+    P_HOST_IP=$3
 
     # Install nginx
     echo -e "$(date +'%Y-%m-%d %R') Install nginx starts."
@@ -211,11 +214,11 @@ listen 80;
 server_name ${P_HOST_IP};
 location = /favicon.ico { access_log off; log_not_found off; }
 location /static/ {
-    root /home/ubuntu/${P_PROJECT_NAME}/${P_PROJECT_NAME};
+    root /home/ubuntu/${P_REPO_NAME}/${P_PROJECT_NAME};
 }
 
 location /media/ {
-    root /home/ubuntu/${P_PROJECT_NAME}/${P_PROJECT_NAME};
+    root /home/ubuntu/${P_REPO_NAME}/${P_PROJECT_NAME};
 }
 
 location / {
@@ -238,6 +241,7 @@ DJANGO_CONF
     nginx -t >>/home/ubuntu/setup_log
 
     echo -e "\n$(date +'%Y-%m-%d %R') Nginx status:" >>/home/ubuntu/setup_log
+    systemctl daemon-reload # reload daemon
     systemctl status nginx >>/home/ubuntu/setup_log
 }
 
@@ -258,7 +262,8 @@ reload_nginx() {
 ## Install and configure Supervisor
 setup_supervisor() {
 
-    P_PROJECT_NAME=$1
+    P_REPO_NAME=$1
+    P_PROJECT_NAME=$2
 
     # Install supervisor
     echo -e "$(date +'%Y-%m-%d %R') Install supervisor starts."
@@ -272,7 +277,7 @@ setup_supervisor() {
     supervisor_gunicorn=/etc/supervisor/conf.d/gunicorn.conf # create configuration file
     cat >$supervisor_gunicorn <<SUP_GUN
 [program:gunicorn]
-    directory=/home/ubuntu/${P_PROJECT_NAME}/${P_PROJECT_NAME}
+    directory=/home/ubuntu/${P_REPO_NAME}/${P_PROJECT_NAME}
     command=/home/ubuntu/env/bin/gunicorn --workers 3 --bind unix:/run/gunicorn.sock  ${P_PROJECT_NAME}.wsgi:application
     autostart=true
     autorestart=true
@@ -287,6 +292,7 @@ SUP_GUN
     echo -e "$(date +'%Y-%m-%d %R') Reload supervisor."
     supervisorctl reread # tell supervisor read configuration file >> /home/ubuntu/setup_log
     supervisorctl update # update supervisor configuration
+    systemctl daemon-reload
     supervisorctl reload # Restarted supervisord
 
     # logging supervisor status
@@ -311,6 +317,7 @@ reload_supervisor() {
 create_update_script() {
 
     echo -e "$(date +'%Y-%m-%d %R') Update script file creates."
+    rm -f /home/ubuntu/update.sh
     update_script=/home/ubuntu/update.sh # create update script file
     cat >$update_script <<UPDATE_SCRIPT
 #!/bin/bash
@@ -320,33 +327,32 @@ create_update_script() {
 #Date updated:
 #Description of the script: Update codes and deploy
 
+
 ## Download codes from github
 load_code() {
 
-    P_PROJECT_NAME=$1
+    P_REPO_NAME=$1
     P_GITHUB_URL=$2
 
     echo -e "$(date +'%Y-%m-%d %R') Download codes from github starts..."
-    rm -rf /home/ubuntu/${P_PROJECT_NAME} # remove the exsting directory
+    rm -rf /home/ubuntu/${P_REPO_NAME} # remove the exsting directory
     cd /home/ubuntu
     git clone $P_GITHUB_URL # clone codes from github
     echo -e "$(date +'%Y-%m-%d %R') Download codes from github completed.\n"
-
-    # logging
-    echo -e "\n$(date +'%Y-%m-%d %R') Code loaded." >>/home/ubuntu/update_log
 }
 
 ## Create .env file within project dir
 create_env_file() {
 
-    P_PROJECT_NAME=$1
-    P_HOST_IP=$2
-    P_DB_NAME=$3
-    P_USER=$4
-    P_PWD=$5
+    P_REPO_NAME=$1
+    P_PROJECT_NAME=$2
+    P_HOST_IP=$3
+    P_DB_NAME=$4
+    P_USER=$5
+    P_PWD=$6
 
     echo -e "$(date +'%Y-%m-%d %R') Create .env file starts..."
-    env_file=/home/ubuntu/${P_PROJECT_NAME}/${P_PROJECT_NAME}/${P_PROJECT_NAME}/.env
+    env_file=/home/ubuntu/${P_REPO_NAME}/${P_PROJECT_NAME}/${P_PROJECT_NAME}/.env
     cat >$env_file <<ENV
 DEBUG=False
 ALLOWED_HOSTS=${P_HOST_IP}
@@ -358,20 +364,18 @@ MYSQL_PORT=3306
 ENV
     echo -e "$(date +'%Y-%m-%d %R') Create .env file completed.\n"
 
-    # logging
-    echo -e "\n$(date +'%Y-%m-%d %R') Env file created." >>/home/ubuntu/update_log
 }
 
 ## Update packages within venv
 update_venv_package() {
 
-    P_PROJECT_NAME=$1
-    P_MIGRATE_APP=$2
+    P_REPO_NAME=$1
+    P_PROJECT_NAME=$2
 
     echo -e "$(date +'%Y-%m-%d %R') Update venv packages starts..."
     source /home/ubuntu/env/bin/activate # activate venv
 
-    pip install -r /home/ubuntu/${P_PROJECT_NAME}/requirements.txt
+    pip install -r /home/ubuntu/${P_REPO_NAME}/requirements.txt
     echo -e "$(date +'%Y-%m-%d %R') Update venv packages completed.\n"
 
     # logging package list
@@ -380,13 +384,10 @@ update_venv_package() {
 
     # Migrate App
     echo -e "$(date +'%Y-%m-%d %R') Migrate App starts..."
-    python3 /home/ubuntu/${P_PROJECT_NAME}/${P_PROJECT_NAME}/manage.py makemigrations
-    python3 /home/ubuntu/${P_PROJECT_NAME}/${P_PROJECT_NAME}/manage.py migrate
+    python3 /home/ubuntu/${P_REPO_NAME}/${P_PROJECT_NAME}/manage.py makemigrations
+    python3 /home/ubuntu/${P_REPO_NAME}/${P_PROJECT_NAME}/manage.py migrate
     deactivate
     echo -e "$(date +'%Y-%m-%d %R') Migrate App starts completed.\n"
-
-    # logging
-    echo -e "\n$(date +'%Y-%m-%d %R') Update env packages." >>/home/ubuntu/update_log
 }
 
 ## Reload Nginx
@@ -415,14 +416,16 @@ reload_supervisor() {
     supervisorctl status >>/home/ubuntu/update_log
 }
 
+echo -e "\n$(date +'%Y-%m-%d %R') The name of github repository:"
+read P_REPO_NAME
+
 echo -e "\n$(date +'%Y-%m-%d %R') The name of django project:"
 read P_PROJECT_NAME
 
 echo -e "\n$(date +'%Y-%m-%d %R') The URL of github:"
 read P_GITHUB_URL
 
-echo -e "\n$(date +'%Y-%m-%d %R') The IP to deploy:"
-read P_HOST_IP
+P_HOST_IP=$(dig +short myip.opendns.com @resolver1.opendns.com) # public ip
 
 echo -e "\n$(date +'%Y-%m-%d %R') The username for MySQL:"
 read P_USER
@@ -433,17 +436,14 @@ read -s P_PWD
 echo -e "\n$(date +'%Y-%m-%d %R') The name of batabase for app project:"
 read P_DB_NAME
 
-echo -e "\n$(date +'%Y-%m-%d %R') You want to test your app during deployment?\nEnter '1' if you need to test."
-read P_IS_TEST
-
 ## Download codes from github
-load_code $P_PROJECT_NAME $P_GITHUB_URL
+load_code $P_REPO_NAME $P_GITHUB_URL
 
 ## Create .env file within project dir
-create_env_file $P_PROJECT_NAME $P_HOST_IP $P_DB_NAME $P_USER $P_PWD
+create_env_file $P_REPO_NAME $P_PROJECT_NAME $P_HOST_IP $P_DB_NAME $P_USER $P_PWD
 
 ## Install packages within venv
-update_venv_package $P_PROJECT_NAME
+update_venv_package $P_REPO_NAME $P_PROJECT_NAME
 
 ## Reload Nginx
 reload_nginx
@@ -454,12 +454,24 @@ UPDATE_SCRIPT
 
 }
 
-P_PROJECT_NAME="project_name"
-P_GITHUB_URL="github_url"
+create_cloud_config() {
+
+    echo -e "$(date +'%Y-%m-%d %R') Create cloud config for restart script."
+    cloud_config=/etc/cloud/cloud.cfg.d/cloud-config.cfg # create cloud configuration file
+    cat >$cloud_config <<CLOUD_CONFIG
+#cloud-config
+cloud_final_modules:
+- [scripts-user, always]
+CLOUD_CONFIG
+}
+
+P_REPO_NAME="demoProj"
+P_PROJECT_NAME="demoProj"
+P_GITHUB_URL="https://github.com/simonangel-fong/demoProj.git"
 P_HOST_IP=$(dig +short myip.opendns.com @resolver1.opendns.com) # public ip
-P_USER="user"
-P_PWD="pwd"
-P_DB_NAME="db_name"
+P_USER="adam"
+P_PWD="adam123456"
+P_DB_NAME="django"
 
 ## Update OS
 update_os
@@ -471,22 +483,25 @@ setup_mysql $P_USER $P_PWD $P_DB_NAME
 setup_venv
 
 ## Download codes from github
-load_code $P_PROJECT_NAME $P_GITHUB_URL
+load_code $P_REPO_NAME $P_GITHUB_URL
 
 ## Create .env file within project dir
-create_env_file $P_PROJECT_NAME $P_HOST_IP $P_DB_NAME $P_USER $P_PWD
+create_env_file $P_REPO_NAME $P_PROJECT_NAME $P_HOST_IP $P_DB_NAME $P_USER $P_PWD
 
 ## Install packages within venv
-update_venv_package $P_PROJECT_NAME
+update_venv_package $P_REPO_NAME $P_PROJECT_NAME
 
 ## Install and configure Gunicorn
-setup_gunicorn $P_PROJECT_NAME
+setup_gunicorn $P_REPO_NAME $P_PROJECT_NAME
 
 ## Install and configure Nginx
-setup_nginx $P_PROJECT_NAME $P_HOST_IP
+setup_nginx $P_REPO_NAME $P_PROJECT_NAME $P_HOST_IP
 
 ## Install and configure Supervisor
-setup_supervisor $P_PROJECT_NAME
+setup_supervisor $P_REPO_NAME $P_PROJECT_NAME
 
 ## Create update script
 create_update_script
+
+## Create cloud config, the script will be run each restart.
+create_cloud_config
